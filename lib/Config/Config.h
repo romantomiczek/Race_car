@@ -1,0 +1,13 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#define MOTOR1_PIN1 D6
+#define MOTOR1_PIN2 D7
+
+#define SERVO_STEERING_PIN D4
+
+
+#endif
+
+// RemoteXY project: https://remotexy.com/en/editor/75b33d7efd8192ef042a2d30cd2bcf8e/
+// GitHub:  https://github.com/romantomiczek/Skidsteer.git
