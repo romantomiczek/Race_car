@@ -5,6 +5,7 @@
 #include <EEPROM.h>
 #include "Config.h"
 #include <Servo.h>
+#include <WebSocketsServer.h>
 #include "WebPage.h"
 
 /* ========== EEPROM Settings ========== */
@@ -27,6 +28,7 @@ int maxMotorSpeed = 255;
 
 Servo steeringServo;
 ESP8266WebServer server(80);
+WebSocketsServer webSocket = WebSocketsServer(81);
 
 const char *ssid = "RaceCar_AP";
 const char *password = "12345678"; // Password must be at least 8 characters
@@ -153,6 +155,39 @@ void handlePostSettings() {
   sendSettingsJson();
 }
 
+/* ========== WebSocket Handler ========== */
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+  switch(type) {
+    case WStype_DISCONNECTED:
+      Serial.printf("[WS] Client %u disconnected\n", num);
+      break;
+    case WStype_CONNECTED:
+      Serial.printf("[WS] Client %u connected\n", num);
+      break;
+    case WStype_TEXT:
+    {
+      if (length >= 4 && payload[0] == 'C' && payload[1] == ':') {
+        int pwm = 0, angle = 0;
+        if (sscanf((const char *)&payload[2], "%d,%d", &pwm, &angle) == 2) {
+          pwm = constrain(pwm, -maxMotorSpeed, maxMotorSpeed);
+          if (pwm > 0) {
+            motorForward(pwm);
+          } else if (pwm < 0) {
+            motorBackward(-pwm);
+          } else {
+            motorStop();
+          }
+          angle = constrain(angle, min(steerLeft, steerRight), max(steerLeft, steerRight));
+          steeringServo.write(angle);
+        }
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
 /* ========== Setup ========== */
 void setup() {
   Serial.begin(115200);
@@ -191,10 +226,16 @@ void setup() {
   server.on("/settings", HTTP_POST, handlePostSettings);
   server.begin();
   Serial.println("HTTP server started");
+
+  // Setup WebSocket Server
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
+  Serial.println("WebSocket server started on port 81");
 }
 
 /* ========== Loop ========== */
 void loop() {
   MDNS.update();
   server.handleClient();
+  webSocket.loop();
 }

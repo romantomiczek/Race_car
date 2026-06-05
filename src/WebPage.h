@@ -403,17 +403,14 @@ const char *WEBPAGE_HTML = R"=====(
         </div>
         <div class="setting-group">
           <div class="setting-head">
-            <label for="servoLeftRange">Servo Left Limit</label>
-            <strong><span id="servoLeftDisp">120</span>&deg;</strong>
+            <label for="steerRangeRange">Steering Range</label>
+            <strong>&plusmn;<span id="steerRangeDisp">49</span>&deg;</strong>
           </div>
-          <input id="servoLeftRange" type="range" min="0" max="180" step="1" value="120">
-        </div>
-        <div class="setting-group">
-          <div class="setting-head">
-            <label for="servoRightRange">Servo Right Limit</label>
-            <strong><span id="servoRightDisp">22</span>&deg;</strong>
+          <input id="steerRangeRange" type="range" min="0" max="71" step="1" value="49">
+          <div style="display:flex;justify-content:space-between;font-size:.75rem;color:#6b82a0;margin-top:4px">
+            <span>Left: <span id="computedLeftDisp">120</span>&deg;</span>
+            <span>Right: <span id="computedRightDisp">22</span>&deg;</span>
           </div>
-          <input id="servoRightRange" type="range" min="0" max="180" step="1" value="22">
         </div>
         <div class="setting-group">
           <div class="setting-head">
@@ -450,10 +447,11 @@ const char *WEBPAGE_HTML = R"=====(
         motorValEl=$('motorVal'),steerValEl=$('steerVal'),
         modal=$('settingsModal'),closeModal=$('closeModalBtn'),
         saveBtn=$('saveSettingsBtn'),statusEl=$('settingsStatus'),
-        scR=$('servoCenterRange'),slR=$('servoLeftRange'),
-        srR=$('servoRightRange'),msR=$('maxSpeedRange'),
-        scD=$('servoCenterDisp'),slD=$('servoLeftDisp'),
-        srD=$('servoRightDisp'),msD=$('maxSpeedDisp'),
+        scR=$('servoCenterRange'),srngR=$('steerRangeRange'),
+        msR=$('maxSpeedRange'),
+        scD=$('servoCenterDisp'),srngD=$('steerRangeDisp'),
+        compLeftD=$('computedLeftDisp'),compRightD=$('computedRightDisp'),
+        msD=$('maxSpeedDisp'),
         toastEl=$('toast');
 
     /* ========== State ========== */
@@ -464,6 +462,10 @@ const char *WEBPAGE_HTML = R"=====(
     var online=false;
     var toastTmr=0;
     var tAnimId=null,sAnimId=null;
+    var ws;
+    var wsConnected=false;
+    var sendPending=false;
+    var sendTimer=null;
 
     /* ========== Settings ========== */
     var cfg={servoCenter:71,servoLeftLimit:120,servoRightLimit:22,maxMotorSpeed:255};
@@ -473,6 +475,26 @@ const char *WEBPAGE_HTML = R"=====(
       online=v;
       statusDot.classList.toggle('online',v);
       statusDot.classList.toggle('offline',!v);
+    }
+
+    function initWebSocket(){
+      var url='ws://'+location.hostname+':81';
+      console.log('WS connecting to', url);
+      ws=new WebSocket(url);
+      ws.onopen=function(){
+        wsConnected=true;
+        setOnline(true);
+        console.log('WS connected');
+      };
+      ws.onclose=function(){
+        wsConnected=false;
+        setOnline(false);
+        console.log('WS closed, reconnecting in 2s');
+        setTimeout(initWebSocket, 2000);
+      };
+      ws.onerror=function(e){
+        console.error('WS error', e);
+      };
     }
 
     /* ========== Toast ========== */
@@ -511,16 +533,27 @@ const char *WEBPAGE_HTML = R"=====(
     function mapMotor(n){return Math.round((n/100)*cfg.maxMotorSpeed)}
 
     /* ========== Control Sending ========== */
-    function sendCtrl(force){
+    function doSend(){
       var motor=mapMotor(normY);
       var steer=mapSteer(normX);
       motorValEl.textContent=String(motor);
       steerValEl.textContent=String(steer);
-      if(!force&&motor===lastMotor&&steer===lastSteer)return;
-      fetch('/control?motor='+motor+'&steer='+steer,{method:'GET',cache:'no-store'})
-        .then(function(r){setOnline(r.ok)})
-        .catch(function(){setOnline(false)});
+      if(motor===lastMotor&&steer===lastSteer)return;
+      if(wsConnected && ws.readyState===WebSocket.OPEN){
+        ws.send('C:'+motor+','+steer);
+      }
       lastMotor=motor;lastSteer=steer;
+    }
+    function sendCtrl(force){
+      if(force){
+        doSend();
+        sendPending=false;
+        if(sendTimer){clearTimeout(sendTimer);sendTimer=null}
+        return;
+      }
+      if(sendPending)return;
+      sendPending=true;
+      sendTimer=setTimeout(function(){sendPending=false;doSend()},25);
     }
 
     /* ========== Joystick Rendering ========== */
@@ -543,7 +576,7 @@ const char *WEBPAGE_HTML = R"=====(
       if(dist>maxR){dx=(dx/dist)*maxR;dy=(dy/dist)*maxR}
       normX=Math.max(-100,Math.min(100,Math.round((dx/maxR)*100)));
       normY=Math.max(-100,Math.min(100,Math.round((-dy/maxR)*100)));
-      renderJoy();sendCtrl(true);
+      renderJoy();sendCtrl();
     }
     joy.addEventListener('pointerdown',function(e){
       if(joyPtr!==null)return;
@@ -568,7 +601,7 @@ const char *WEBPAGE_HTML = R"=====(
       var dy=Math.max(-hh,Math.min(hh,cy-e.clientY));
       normY=Math.round((dy/hh)*100);
       if(tAnimId){cancelAnimationFrame(tAnimId);tAnimId=null}
-      renderThrottle();sendCtrl(true);
+      renderThrottle();sendCtrl();
     }
     tZone.addEventListener('pointerdown',function(e){
       if(tPtr!==null)return;e.preventDefault();
@@ -592,7 +625,7 @@ const char *WEBPAGE_HTML = R"=====(
       var dx=Math.max(-hw,Math.min(hw,e.clientX-cx));
       normX=Math.round((dx/hw)*100);
       if(sAnimId){cancelAnimationFrame(sAnimId);sAnimId=null}
-      renderSteering();sendCtrl(true);
+      renderSteering();sendCtrl();
     }
     sZone.addEventListener('pointerdown',function(e){
       if(sPtr!==null)return;e.preventDefault();
@@ -684,16 +717,34 @@ const char *WEBPAGE_HTML = R"=====(
       if(e.target===modal)modal.classList.remove('active');
     });
 
+    function updateRangeMax(){
+      var c=Number(scR.value);
+      var maxRange=Math.min(c,180-c);
+      srngR.max=maxRange;
+      if(Number(srngR.value)>maxRange)srngR.value=maxRange;
+      updateRangeDisp();
+    }
+    function updateRangeDisp(){
+      var c=Number(scR.value),r=Number(srngR.value);
+      srngD.textContent=r;
+      compLeftD.textContent=c+r;
+      compRightD.textContent=c-r;
+    }
     function syncForm(){
-      scR.value=cfg.servoCenter;slR.value=cfg.servoLeftLimit;
-      srR.value=cfg.servoRightLimit;msR.value=cfg.maxMotorSpeed;
-      scD.textContent=cfg.servoCenter;slD.textContent=cfg.servoLeftLimit;
-      srD.textContent=cfg.servoRightLimit;msD.textContent=cfg.maxMotorSpeed;
+      scR.value=cfg.servoCenter;
+      var range=Math.round((cfg.servoLeftLimit-cfg.servoRightLimit)/2);
+      if(range<0)range=-range;
+      var maxRange=Math.min(cfg.servoCenter,180-cfg.servoCenter);
+      srngR.max=maxRange;
+      srngR.value=Math.min(range,maxRange);
+      msR.value=cfg.maxMotorSpeed;
+      scD.textContent=cfg.servoCenter;
+      msD.textContent=cfg.maxMotorSpeed;
+      updateRangeDisp();
       statusEl.textContent='';
     }
-    scR.oninput=function(){scD.textContent=scR.value};
-    slR.oninput=function(){slD.textContent=slR.value};
-    srR.oninput=function(){srD.textContent=srR.value};
+    scR.oninput=function(){scD.textContent=scR.value;updateRangeMax()};
+    srngR.oninput=function(){updateRangeDisp()};
     msR.oninput=function(){msD.textContent=msR.value};
 
     function loadCfg(){
@@ -713,10 +764,12 @@ const char *WEBPAGE_HTML = R"=====(
     saveBtn.onclick=function(){
       saveBtn.disabled=true;
       statusEl.textContent='Saving...';
+      var center=Number(scR.value);
+      var range=Number(srngR.value);
       var body=new URLSearchParams({
-        servoCenter:scR.value,
-        servoLeftLimit:slR.value,
-        servoRightLimit:srR.value,
+        servoCenter:center,
+        servoLeftLimit:center+range,
+        servoRightLimit:center-range,
         maxMotorSpeed:msR.value
       });
       fetch('/settings',{
@@ -755,11 +808,10 @@ const char *WEBPAGE_HTML = R"=====(
       }
     });
 
-    /* ========== Periodic Control Loop ========== */
+    /* ========== Periodic Heartbeat ========== */
     setInterval(function(){
-      var active=joyPtr!==null||tPtr!==null||sPtr!==null||normX!==0||normY!==0;
-      sendCtrl(active);
-    },100);
+      if(normX!==0||normY!==0)doSend();
+    },200);
 
     /* ========== Init ========== */
     setOnline(false);
@@ -767,6 +819,7 @@ const char *WEBPAGE_HTML = R"=====(
     renderSteering();
     try{if(localStorage.getItem('rc_mode')==='sliders')setMode('sliders')}catch(e){}
     loadCfg();
+    initWebSocket();
   </script>
 </body>
 </html>
