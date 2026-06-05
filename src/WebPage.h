@@ -111,7 +111,7 @@ const char *WEBPAGE_HTML = R"=====(
       flex-direction:column;gap:12px;padding:12px;
     }
     .joystick{
-      width:min(68vmin,300px);height:min(68vmin,300px);
+      width:min(100vmin,350px);height:min(100vmin,350px);
       border-radius:50%;
       border:2px solid rgba(147,173,204,.3);
       background:radial-gradient(circle,#1e3250 0%,#152438 55%,#0f1a28 100%);
@@ -122,9 +122,9 @@ const char *WEBPAGE_HTML = R"=====(
     .joy-line-x{left:15%;right:15%;top:50%;height:1px}
     .joy-line-y{top:15%;bottom:15%;left:50%;width:1px}
     .knob{
-      width:34%;height:34%;border-radius:50%;
+      width:24%;height:24%;border-radius:50%;
       background:radial-gradient(circle at 38% 32%,#a0cfff,#5a9de0 30%,#3a78c0 60%,#295896 100%);
-      position:absolute;left:33%;top:33%;
+      position:absolute;left:38%;top:38%;
       box-shadow:0 4px 16px rgba(0,0,0,.35),0 0 20px rgba(134,185,255,.15);
       pointer-events:none;
     }
@@ -558,7 +558,7 @@ const char *WEBPAGE_HTML = R"=====(
 
     /* ========== Joystick Rendering ========== */
     function renderJoy(){
-      var range=joy.clientWidth*0.33;
+      var range=joy.clientWidth*0.38;
       var px=(normX/100)*range;
       var py=-(normY/100)*range;
       knob.style.transform='translate('+px+'px,'+py+'px)';
@@ -571,7 +571,7 @@ const char *WEBPAGE_HTML = R"=====(
       var rect=joy.getBoundingClientRect();
       var cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;
       var dx=e.clientX-cx,dy=e.clientY-cy;
-      var maxR=rect.width*0.33;
+      var maxR=rect.width*0.38;
       var dist=Math.hypot(dx,dy);
       if(dist>maxR){dx=(dx/dist)*maxR;dy=(dy/dist)*maxR}
       normX=Math.max(-100,Math.min(100,Math.round((dx/maxR)*100)));
