@@ -275,6 +275,13 @@ const char *WEBPAGE_HTML = R"=====(
     .setting-head label{font-size:.88rem}
     .setting-head strong{font-size:.95rem;color:#fff}
     .modal-body input[type=range]{width:100%;accent-color:#86b9ff;height:28px}
+    .text-input{
+      width:100%;padding:8px 12px;border-radius:10px;
+      border:1px solid rgba(147,173,204,.2);
+      background:rgba(20,32,48,.6);color:#e6edf5;
+      font-size:.9rem;outline:none;transition:border-color .2s;
+    }
+    .text-input:focus{border-color:rgba(134,185,255,.5)}
     .modal-footer{padding:14px 20px 28px;display:grid;gap:8px}
     .settings-status{
       font-size:.82rem;color:#b6c6d9;min-height:1.2em;text-align:center;
@@ -419,6 +426,18 @@ const char *WEBPAGE_HTML = R"=====(
           </div>
           <input id="maxSpeedRange" type="range" min="0" max="255" step="1" value="255">
         </div>
+        <div class="setting-group">
+          <div class="setting-head">
+            <label for="ssidInput">WiFi SSID</label>
+          </div>
+          <input id="ssidInput" type="text" maxlength="32" class="text-input" placeholder="RaceCar_AP">
+        </div>
+        <div class="setting-group">
+          <div class="setting-head">
+            <label for="passwordInput">WiFi Password</label>
+          </div>
+          <input id="passwordInput" type="password" minlength="8" maxlength="63" class="text-input" placeholder="">
+        </div>
       </div>
       <div class="modal-footer">
         <div id="settingsStatus" class="settings-status"></div>
@@ -452,6 +471,7 @@ const char *WEBPAGE_HTML = R"=====(
         scD=$('servoCenterDisp'),srngD=$('steerRangeDisp'),
         compLeftD=$('computedLeftDisp'),compRightD=$('computedRightDisp'),
         msD=$('maxSpeedDisp'),
+        ssidI=$('ssidInput'),pwdI=$('passwordInput'),
         toastEl=$('toast');
 
     /* ========== State ========== */
@@ -468,7 +488,7 @@ const char *WEBPAGE_HTML = R"=====(
     var sendTimer=null;
 
     /* ========== Settings ========== */
-    var cfg={servoCenter:71,servoLeftLimit:120,servoRightLimit:22,maxMotorSpeed:255};
+    var cfg={servoCenter:71,servoLeftLimit:120,servoRightLimit:22,maxMotorSpeed:255,ssid:'',password:''};
 
     /* ========== Connection Status ========== */
     function setOnline(v){
@@ -740,6 +760,8 @@ const char *WEBPAGE_HTML = R"=====(
       msR.value=cfg.maxMotorSpeed;
       scD.textContent=cfg.servoCenter;
       msD.textContent=cfg.maxMotorSpeed;
+      ssidI.value=cfg.ssid;
+      pwdI.value=cfg.password;
       updateRangeDisp();
       statusEl.textContent='';
     }
@@ -755,6 +777,8 @@ const char *WEBPAGE_HTML = R"=====(
           cfg.servoLeftLimit=Number(d.servoLeftLimit);
           cfg.servoRightLimit=Number(d.servoRightLimit);
           cfg.maxMotorSpeed=Number(d.maxMotorSpeed);
+          cfg.ssid=d.ssid;
+          cfg.password=d.password;
           setOnline(true);
           renderSteering();
         })
@@ -766,11 +790,20 @@ const char *WEBPAGE_HTML = R"=====(
       statusEl.textContent='Saving...';
       var center=Number(scR.value);
       var range=Number(srngR.value);
+
+      if(pwdI.value.length<8){
+        statusEl.textContent='Password must be at least 8 chars';
+        saveBtn.disabled=false;
+        return;
+      }
+
       var body=new URLSearchParams({
         servoCenter:center,
         servoLeftLimit:center+range,
         servoRightLimit:center-range,
-        maxMotorSpeed:msR.value
+        maxMotorSpeed:msR.value,
+        ssid:ssidI.value,
+        password:pwdI.value
       });
       fetch('/settings',{
         method:'POST',
@@ -783,6 +816,8 @@ const char *WEBPAGE_HTML = R"=====(
         cfg.servoLeftLimit=Number(d.servoLeftLimit);
         cfg.servoRightLimit=Number(d.servoRightLimit);
         cfg.maxMotorSpeed=Number(d.maxMotorSpeed);
+        cfg.ssid=d.ssid;
+        cfg.password=d.password;
         statusEl.textContent='';
         modal.classList.remove('active');
         toast('Settings saved','ok');

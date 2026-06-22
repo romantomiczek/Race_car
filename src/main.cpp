@@ -9,53 +9,75 @@
 #include "WebPage.h"
 
 /* ========== EEPROM Settings ========== */
-#define EEPROM_SIZE 16
-#define SETTINGS_MAGIC 0xAB
+#define EEPROM_SIZE 128
+#define SETTINGS_MAGIC 0xAC
 
-struct CarSettings {
+struct CarSettings
+{
   uint8_t magic;
   uint8_t servoCenter;
   uint8_t servoLeftLimit;
   uint8_t servoRightLimit;
   uint8_t maxMotorSpeed;
+  char ssid[33];
+  char password[65];
 };
 
 // Runtime settings (loaded from EEPROM or defaults)
 int steerCenter = 71;
-int steerLeft   = 120;
-int steerRight  = 22;
+int steerLeft = 120;
+int steerRight = 22;
 int maxMotorSpeed = 255;
+String currentSsid = "RaceCar_AP";
+String currentPassword = "12345678";
+
+bool pendingWifiRestart = false;
 
 Servo steeringServo;
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-const char *ssid = "RaceCar_AP";
-const char *password = "12345678"; // Password must be at least 8 characters
-
 /* ========== EEPROM Functions ========== */
-void loadSettings() {
+void loadSettings()
+{
   EEPROM.begin(EEPROM_SIZE);
   CarSettings s = {};
   EEPROM.get(0, s);
-  if (s.magic == SETTINGS_MAGIC) {
-    steerCenter   = constrain(s.servoCenter, 0, 180);
-    steerLeft     = constrain(s.servoLeftLimit, 0, 180);
-    steerRight    = constrain(s.servoRightLimit, 0, 180);
+  if (s.magic == SETTINGS_MAGIC)
+  {
+    steerCenter = constrain(s.servoCenter, 0, 180);
+    steerLeft = constrain(s.servoLeftLimit, 0, 180);
+    steerRight = constrain(s.servoRightLimit, 0, 180);
     maxMotorSpeed = constrain(s.maxMotorSpeed, 0, 255);
+    // Safety check for strings to prevent loading garbage
+    s.ssid[sizeof(s.ssid) - 1] = '\0';
+    s.password[sizeof(s.password) - 1] = '\0';
+    if (strlen(s.ssid) > 0)
+    {
+      currentSsid = String(s.ssid);
+    }
+    if (strlen(s.password) >= 8)
+    {
+      currentPassword = String(s.password);
+    }
     Serial.println("Settings loaded from EEPROM");
-  } else {
+  }
+  else
+  {
     Serial.println("No saved settings, using defaults");
   }
 }
 
-void saveSettings() {
-  CarSettings s;
+void saveSettings()
+{
+  CarSettings s = {};
   s.magic = SETTINGS_MAGIC;
   s.servoCenter = (uint8_t)steerCenter;
   s.servoLeftLimit = (uint8_t)steerLeft;
   s.servoRightLimit = (uint8_t)steerRight;
   s.maxMotorSpeed = (uint8_t)maxMotorSpeed;
+  strncpy(s.ssid, currentSsid.c_str(), sizeof(s.ssid) - 1);
+  strncpy(s.password, currentPassword.c_str(), sizeof(s.password) - 1);
   EEPROM.put(0, s);
   EEPROM.commit();
   Serial.println("Settings saved to EEPROM");
@@ -81,26 +103,35 @@ void motorStop()
 }
 
 /* ========== HTTP Handlers ========== */
-void handleRoot() {
+void handleRoot()
+{
   server.send(200, "text/html", WEBPAGE_HTML);
 }
 
-void handleControl() {
-  if (server.hasArg("motor")) {
+void handleControl()
+{
+  if (server.hasArg("motor"))
+  {
     int pwm = server.arg("motor").toInt();
     pwm = constrain(pwm, -maxMotorSpeed, maxMotorSpeed);
     Serial.print("Motor: ");
     Serial.println(pwm);
-    if (pwm > 0) {
+    if (pwm > 0)
+    {
       motorForward(pwm);
-    } else if (pwm < 0) {
+    }
+    else if (pwm < 0)
+    {
       motorBackward(abs(pwm));
-    } else {
+    }
+    else
+    {
       motorStop();
     }
   }
 
-  if (server.hasArg("steer")) {
+  if (server.hasArg("steer"))
+  {
     int angle = server.arg("steer").toInt();
     angle = constrain(angle, min(steerLeft, steerRight), max(steerLeft, steerRight));
     Serial.print("Steer: ");
@@ -111,7 +142,8 @@ void handleControl() {
   server.send(200, "text/plain", "OK");
 }
 
-void sendSettingsJson() {
+void sendSettingsJson()
+{
   String json = "{\"servoCenter\":";
   json += String(steerCenter);
   json += ",\"servoLeftLimit\":";
@@ -120,15 +152,22 @@ void sendSettingsJson() {
   json += String(steerRight);
   json += ",\"maxMotorSpeed\":";
   json += String(maxMotorSpeed);
-  json += "}";
+  json += ",\"ssid\":\"";
+  json += currentSsid;
+  json += "\",\"password\":\"";
+  json += currentPassword;
+  json += "\"}";
   server.send(200, "application/json", json);
 }
 
-void handleGetSettings() {
+void handleGetSettings()
+{
   sendSettingsJson();
 }
 
-void handlePostSettings() {
+void handlePostSettings()
+{
+  bool wifiChanged = false;
   if (server.hasArg("servoCenter"))
     steerCenter = constrain(server.arg("servoCenter").toInt(), 0, 180);
   if (server.hasArg("servoLeftLimit"))
@@ -137,6 +176,21 @@ void handlePostSettings() {
     steerRight = constrain(server.arg("servoRightLimit").toInt(), 0, 180);
   if (server.hasArg("maxMotorSpeed"))
     maxMotorSpeed = constrain(server.arg("maxMotorSpeed").toInt(), 0, 255);
+
+  if (server.hasArg("ssid") && server.hasArg("password"))
+  {
+    String newSsid = server.arg("ssid");
+    String newPwd = server.arg("password");
+    if (newSsid.length() > 0 && newPwd.length() >= 8)
+    {
+      if (newSsid != currentSsid || newPwd != currentPassword)
+      {
+        currentSsid = newSsid;
+        currentPassword = newPwd;
+        wifiChanged = true;
+      }
+    }
+  }
 
   saveSettings();
 
@@ -153,43 +207,59 @@ void handlePostSettings() {
   Serial.println(maxMotorSpeed);
 
   sendSettingsJson();
+
+  if (wifiChanged)
+  {
+    pendingWifiRestart = true;
+  }
 }
 
 /* ========== WebSocket Handler ========== */
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-  switch(type) {
-    case WStype_DISCONNECTED:
-      Serial.printf("[WS] Client %u disconnected\n", num);
-      break;
-    case WStype_CONNECTED:
-      Serial.printf("[WS] Client %u connected\n", num);
-      break;
-    case WStype_TEXT:
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length)
+{
+  switch (type)
+  {
+  case WStype_DISCONNECTED:
+    Serial.printf("[WS] Client %u disconnected\n", num);
+    break;
+  case WStype_CONNECTED:
+    Serial.printf("[WS] Client %u connected\n", num);
+    break;
+  case WStype_TEXT:
+  {
+    if (length >= 4 && payload[0] == 'C' && payload[1] == ':')
     {
-      if (length >= 4 && payload[0] == 'C' && payload[1] == ':') {
-        int pwm = 0, angle = 0;
-        if (sscanf((const char *)&payload[2], "%d,%d", &pwm, &angle) == 2) {
-          pwm = constrain(pwm, -maxMotorSpeed, maxMotorSpeed);
-          if (pwm > 0) {
-            motorForward(pwm);
-          } else if (pwm < 0) {
-            motorBackward(-pwm);
-          } else {
-            motorStop();
-          }
-          angle = constrain(angle, min(steerLeft, steerRight), max(steerLeft, steerRight));
-          steeringServo.write(angle);
+      int pwm = 0, angle = 0;
+      if (sscanf((const char *)&payload[2], "%d,%d", &pwm, &angle) == 2)
+      {
+        pwm = constrain(pwm, -maxMotorSpeed, maxMotorSpeed);
+        if (pwm > 0)
+        {
+          motorForward(pwm);
         }
+        else if (pwm < 0)
+        {
+          motorBackward(-pwm);
+        }
+        else
+        {
+          motorStop();
+        }
+        angle = constrain(angle, min(steerLeft, steerRight), max(steerLeft, steerRight));
+        steeringServo.write(angle);
+        Serial.printf("[WS] Control - Motor: %d, Steer: %d\n", pwm, angle);
       }
-      break;
     }
-    default:
-      break;
+    break;
+  }
+  default:
+    break;
   }
 }
 
 /* ========== Setup ========== */
-void setup() {
+void setup()
+{
   Serial.begin(115200);
 
   // Load settings from EEPROM
@@ -207,15 +277,18 @@ void setup() {
 
   // Setup WiFi Access Point
   Serial.println("\nConfiguring Access Point...");
-  WiFi.softAP(ssid, password);
+  WiFi.softAP(currentSsid.c_str(), currentPassword.c_str());
   IPAddress myIP = WiFi.softAPIP();
   Serial.print("AP IP address: ");
   Serial.println(myIP);
 
   // Setup mDNS - access via http://racecar.local
-  if (MDNS.begin("racecar")) {
+  if (MDNS.begin("racecar"))
+  {
     Serial.println("mDNS started: http://racecar.local");
-  } else {
+  }
+  else
+  {
     Serial.println("mDNS failed to start");
   }
 
@@ -234,8 +307,19 @@ void setup() {
 }
 
 /* ========== Loop ========== */
-void loop() {
+void loop()
+{
   MDNS.update();
   server.handleClient();
   webSocket.loop();
+
+  if (pendingWifiRestart)
+  {
+    delay(500); // Wait briefly to allow the HTTP response to be sent
+    Serial.println("Restarting AP with new credentials...");
+    WiFi.softAPdisconnect(true);
+    delay(100);
+    WiFi.softAP(currentSsid.c_str(), currentPassword.c_str());
+    pendingWifiRestart = false;
+  }
 }
