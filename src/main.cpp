@@ -24,9 +24,9 @@ struct CarSettings
 };
 
 // Runtime settings (loaded from EEPROM or defaults)
-int steerCenter = 71;
-int steerLeft = 120;
-int steerRight = 22;
+int steerCenter = 90;
+int steerLeft = 150;
+int steerRight = 30;
 int maxMotorSpeed = 255;
 String currentSsid = "RaceCar_AP";
 String currentPassword = "12345678";

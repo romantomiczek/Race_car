@@ -8,5 +8,4 @@
 
 #endif
 
-// RemoteXY project: https://remotexy.com/en/editor/75b33d7efd8192ef042a2d30cd2bcf8e/
-// GitHub:  https://github.com/romantomiczek/Skidsteer.git
+// GitHub:  https://github.com/romantomiczek/Race_car.git
